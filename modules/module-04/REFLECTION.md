@@ -18,7 +18,9 @@ In Module 3, services called each other directly over HTTP. Now activity-service
 
 Think about what happens under load, or when notification-service is temporarily down.
 
-> *Your answer:*
+> *Your answer:* By not waiting for notification-service, activity-service can save the activity and respond to the user immediately. This makes the system faster and prevents activity creation from failing just because notifications are slow or temporarily unavailable.
+
+Notification-service also benefits because it can process messages at its own pace. If there is a spike in traffic, messages can stay in RabbitMQ until the service is ready to consume them. If notification-service goes down for a short time, the messages remain in the queue and can be processed when the service comes back online.
 
 ---
 
@@ -30,7 +32,9 @@ In Module 3 you already knew how to call another service directly over HTTP — 
 
 Think about what happens if notification-service is slow, or crashes mid-message.
 
-> *Your answer:*
+> *Your answer:* Using a broker is more reliable than making a direct HTTP call for notifications. With HTTP, activity-service would have to wait for notification-service to respond, and activity creation could fail if notification-service was slow or offline.
+
+RabbitMQ acts as a buffer between the services. Activity-service only needs to publish a message and continue. If notification-service crashes or becomes overloaded, the messages remain in the queue instead of being lost. This reduces coupling between the services and improves resilience.
 
 ---
 
@@ -42,7 +46,9 @@ With synchronous REST, you get an immediate answer: success or failure. With asy
 
 What visibility do you lose when you go async?
 
-> *Your answer:*
+> *Your answer:* With asynchronous messaging, users do not get immediate confirmation that a notification was actually delivered. They only know that the activity was created successfully. If the notification is never processed, the user may not notice until they realize they never received it.
+
+As a developer, I also lose immediate visibility because there is no direct success or failure response from notification-service. Instead, I have to rely on monitoring tools, logs, queue metrics, and dead-letter queues to detect problems. The tradeoff is better scalability and reliability, but less immediate feedback about whether downstream processing succeeded.
 
 ---
 
