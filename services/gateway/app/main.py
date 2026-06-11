@@ -1,4 +1,5 @@
 import httpx
+from jose import JWTError, jwt
 from fastapi import FastAPI, Request, Response
 
 from app.config import settings
@@ -6,11 +7,12 @@ from app.config import settings
 app = FastAPI(title="gateway", version="1.0.0")
 
 ROUTES: dict[str, str] = {
-    "users":      settings.user_service_url,
-    "games":      settings.game_service_url,
+    "users": settings.user_service_url,
+    "games": settings.game_service_url,
     "activities": settings.activity_service_url,
-    # Added in Module 4
-    # "notifications": settings.notification_service_url,
+    "consent": settings.logging_service_url,
+    "logs": settings.logging_service_url,
+    "auth": settings.auth_service_url,
 }
 
 
@@ -21,20 +23,50 @@ async def health():
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 async def proxy(request: Request, path: str):
-    # Step 1 — parse the resource name from the path
+
+    # Keep token endpoint public
+    if path == "v1/auth/token":
+        pass
+    else:
+        auth_header = request.headers.get("Authorization")
+
+        if not auth_header or not auth_header.startswith("Bearer "):
+            return Response(
+                status_code=401,
+                content="Missing token",
+            )
+
+        token = auth_header.replace("Bearer ", "")
+
+        try:
+            jwt.decode(
+                token,
+                settings.secret_key,
+                algorithms=["HS256"],
+            )
+        except JWTError:
+            return Response(
+                status_code=401,
+                content="Invalid token",
+            )
+
     segments = path.split("/")
+
     if len(segments) < 2:
         return Response(status_code=404, content="Not found")
 
     resource = segments[1]
 
-    # Step 2 — look up the target service
     target_base = ROUTES.get(resource)
-    if target_base is None:
-        return Response(status_code=404, content=f"Unknown resource: {resource}")
 
-    # Step 3 — forward the request
+    if target_base is None:
+        return Response(
+            status_code=404,
+            content=f"Unknown resource: {resource}",
+        )
+
     target_url = f"{target_base}/{path}"
+
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.request(
@@ -44,12 +76,16 @@ async def proxy(request: Request, path: str):
                 content=await request.body(),
                 params=request.query_params,
             )
+
         return Response(
             content=response.content,
             status_code=response.status_code,
             headers=dict(response.headers),
             media_type=response.headers.get("content-type"),
         )
-    # Step 4 — handle unreachable service
+
     except httpx.RequestError:
-        return Response(status_code=503, content="Service unavailable")
+        return Response(
+            status_code=503,
+            content="Service unavailable",
+        )
